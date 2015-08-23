@@ -1,0 +1,100 @@
+---
+title: "Practical Machine Learning -- Manner Prediction"
+author: "H.W Liu"
+date: "2015年8月22日"
+output: html_document
+---
+
+##1. Project outline##
+
+###1.1 Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+###1.2 Data###
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.   
+
+
+###1.3 Project Goal###
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.   
+
+
+##2. Code And Analysis##  
+###2.1 Load the dataset###
+```{r, warning=FALSE,cache=TRUE}
+library(caret)
+## Load the corresponding dataset
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+```
+
+###2.2 Clean the data###
+As we know, after first glance of the data, we find it has a lot of useless information, which don't make sense to our model building, so, we need to clean the data first
+```{r}
+## Clean the data
+## 1. remove the variables with no variance and NAs
+noVarIndex <- nearZeroVar(training)
+training <- training[, -noVarIndex]
+testing <- testing[, -noVarIndex]
+
+## 2. remove variables are NAs
+mostlyNA <- sapply(training, function(x) mean(is.na(x))) > 0.95
+training <- training[, mostlyNA == FALSE]
+testing  <- testing[, mostlyNA == FALSE]
+
+## 3.remove the first five variables, which are useless to our model building
+training <- training[, -(1:5)]
+testing  <- testing[, -(1:5)]
+```
+###2.3 Train the model###
+Because we need to compute  the out-of-sample error, and as we know, the provided test dataset is only for the submission project, so we will split the training dataset into two datasets, one for training and another for out-of-sample error computing and model eveluation.  
+Here i use random forest, which i think is a good model for this project.
+
+```{r,cache=TRUE}
+set.seed(1234)
+## split the training dataset into training_1 and training_2
+index <- createDataPartition(y = training$classe, p = 0.7, list = FALSE)
+training_1 <- training[index, ]
+training_2 <- training[-index, ]
+## use 3-fold cv for training 
+modelControl <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+## train the model and print the final model 
+model <- train(classe ~ ., data = training_1, method = "rf", trControl = modelControl)
+model$finalModel
+```
+###2.4 Model Evaluation and out-of-sample error###
+```{r, cache=TRUE}
+confusionMatrix(training_2$classe, predict(model, training_2))
+```
+From the confusion matrix, we can see the accuracy is 99.81%, which proves this model to be a good one. And thus the predicted accuracy for the out-of-sample error is 0.18%.The out of sample error is calculated as 1 - accuracy for predictions made against the cross-validation set. Considering that the test set is a sample size of 20, an accuracy rate well above 99% is sufficient to expect that few or none of the test samples will be mis-classified.
+
+###2.5 Retrain the model###
+For the above part, i just to show whether random forest is a good chooice for this problem and the effect of the model. So, to prepare for the submission step, i need to use the full training dataset to train the model for precision of the result of testing dataset.
+```{r}
+model <- train(classe ~ ., data = training, method = "rf", trControl = modelControl)
+model$finalModel
+```
+##3. Make prediction for submission##
+Here, i use the model i created above (with full training data) to predict the new dataset and submit the answers to the server.
+```{r}
+predictions <- predict(model, testing)
+class(predictions)
+## convert factor variables to character variables
+predictions <- as.character(predictions)
+## use the function provided by the official site
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(predictions)
+```
